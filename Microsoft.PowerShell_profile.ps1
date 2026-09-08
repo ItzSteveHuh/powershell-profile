@@ -67,9 +67,27 @@ function Get-UriContent {
     }
 }
 
+function Format-Bytes {
+    param([Parameter(Mandatory)][AllowNull()][Nullable[double]]$Bytes)
+
+    if ($null -eq $Bytes) {
+        return '0 B'
+    }
+
+    $units = 'B', 'KB', 'MB', 'GB', 'TB', 'PB'
+    $index = 0
+    $value = [double]$Bytes
+    while ($value -ge 1024 -and $index -lt $units.Count - 1) {
+        $value /= 1024
+        $index++
+    }
+
+    '{0:N2} {1}' -f $value, $units[$index]
+}
+
 $isInteractiveShell = Test-InteractiveShell
 $debug = if ($null -ne $debug_Override) { [bool]$debug_Override } else { $false }
-$repo_root = if ($repo_root_Override) { $repo_root_Override } else { 'https://raw.githubusercontent.com/ChrisTitusTech' }
+$repo_root = if ($repo_root_Override) { $repo_root_Override } else { 'https://raw.githubusercontent.com/ItzSteveHuh' }
 $profileDir = Get-ProfileDir
 $timeFilePath = if ($timeFilePath_Override) { $timeFilePath_Override } else { Join-Path $profileDir 'LastExecutionTime.txt' }
 $updateInterval = if ($null -ne $updateInterval_Override) { [int]$updateInterval_Override } else { 7 }
@@ -340,50 +358,6 @@ function pubip {
     (Get-UriContent -Uri 'https://ifconfig.me/ip').Trim()
 }
 
-function winutil {
-    & ([ScriptBlock]::Create((Invoke-RestMethod -Uri 'https://christitus.com/win'))) @args
-}
-
-function winutildev {
-    if (Get-Command -Name 'WinUtilDev_Override' -ErrorAction SilentlyContinue) {
-        WinUtilDev_Override @args
-        return
-    }
-
-    & ([ScriptBlock]::Create((Invoke-RestMethod -Uri 'https://christitus.com/windev'))) @args
-}
-
-function windev {
-    $winutilRepo = Join-Path ([Environment]::GetFolderPath('UserProfile')) 'github\winutil'
-    $compileScript = Join-Path $winutilRepo 'Compile.ps1'
-    $compiledScript = Join-Path $winutilRepo 'winutil.ps1'
-
-    if (-not (Test-Path -LiteralPath $compileScript -PathType Leaf)) {
-        throw "WinUtil's Compile.ps1 was not found at '$compileScript'."
-    }
-
-    Push-Location -LiteralPath $winutilRepo
-    try {
-        & $compileScript
-        if (-not $?) {
-            throw 'WinUtil compilation failed.'
-        }
-    } finally {
-        Pop-Location
-    }
-
-    if (-not (Test-Path -LiteralPath $compiledScript -PathType Leaf)) {
-        throw "WinUtil compilation did not create '$compiledScript'."
-    }
-
-    $shell = if (Test-Command pwsh) { 'pwsh.exe' } else { 'powershell.exe' }
-    Start-Process -FilePath $shell -WorkingDirectory $winutilRepo -ArgumentList @(
-        '-NoProfile',
-        '-ExecutionPolicy', 'Bypass',
-        '-File', $compiledScript
-    )
-}
-
 function admin {
     $cwd = (Get-Location).ProviderPath
     $shell = if (Test-Command pwsh) { 'pwsh.exe' } else { 'powershell.exe' }
@@ -577,6 +551,283 @@ function flushdns {
 function cpy { Set-Clipboard ($args -join ' ') }
 function pst { Get-Clipboard }
 
+# Navigation
+function .. { Set-Location -Path '..' }
+function ... { Set-Location -Path '../..' }
+function .... { Set-Location -Path '../../..' }
+
+# bash-style cd: `cd -` toggles to the previous directory, `cd` with no args goes home.
+# (PowerShell's native `cd -` walks location history instead of toggling.)
+$global:OLDPWD = $null
+
+function Set-LocationBash {
+    [CmdletBinding()]
+    param([Parameter(Position = 0)][string]$Path)
+
+    $target = if ($Path) { $Path } else { $HOME }
+    $current = $PWD.Path
+
+    if ($target -eq '-') {
+        if (-not $global:OLDPWD) {
+            Write-Warning 'cd: OLDPWD not set'
+            return
+        }
+        $target = $global:OLDPWD
+    }
+
+    Set-Location -Path $target -ErrorAction Stop
+    $global:OLDPWD = $current
+}
+Set-Alias -Name cd -Value Set-LocationBash -Option AllScope -Force
+
+function explore {
+    param([string]$Path = '.')
+    Invoke-Item -LiteralPath $Path
+}
+Set-Alias -Name open -Value explore -Force
+Set-Alias -Name take -Value mkcd -Force
+Set-Alias -Name reload -Value Invoke-Profile -Force
+
+function edit {
+    param([Parameter(Mandatory)][string]$Path)
+    & $EDITOR $Path
+}
+
+function path {
+    $env:PATH -split [System.IO.Path]::PathSeparator | Where-Object { $_ }
+}
+
+function env {
+    Get-ChildItem -Path Env: | Sort-Object -Property Name
+}
+
+function now {
+    param([switch]$u)
+    if ($u) {
+        [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    } else {
+        Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    }
+}
+
+function hist {
+    param([string]$Pattern)
+
+    $historyPath = (Get-PSReadLineOption).HistorySavePath
+    if (-not $historyPath -or -not (Test-Path -LiteralPath $historyPath)) {
+        Get-History | Select-Object -ExpandProperty CommandLine
+        return
+    }
+
+    $lines = Get-Content -LiteralPath $historyPath
+    if ($Pattern) { $lines | Select-String -Pattern $Pattern } else { $lines }
+}
+
+function ports {
+    Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+        Sort-Object -Property LocalPort |
+        Select-Object LocalAddress, LocalPort,
+            @{ Name = 'Process'; Expression = { (Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName } },
+            @{ Name = 'PID'; Expression = { $_.OwningProcess } }
+}
+
+function killport {
+    param([Parameter(Mandatory)][int]$Port)
+
+    $owners = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty OwningProcess -Unique
+    if (-not $owners) {
+        Write-Warning "No process is listening on port $Port."
+        return
+    }
+
+    foreach ($processId in $owners) {
+        $proc = Get-Process -Id $processId -ErrorAction SilentlyContinue
+        if ($proc) {
+            Write-Host "Stopping $($proc.ProcessName) (PID $processId) on port $Port"
+            Stop-Process -Id $processId -Force
+        }
+    }
+}
+
+function weather {
+    param([string]$Location = '')
+    (Get-UriContent -Uri "https://wttr.in/$Location`?format=3").Trim()
+}
+
+# Linux-style coreutils
+function wc {
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)][string]$Path,
+        [switch]$l,
+        [switch]$w,
+        [switch]$c,
+        [Parameter(ValueFromPipeline)][string]$InputObject
+    )
+
+    begin { $buffer = [System.Collections.Generic.List[string]]::new() }
+    process { if ($PSBoundParameters.ContainsKey('InputObject')) { $buffer.Add($InputObject) } }
+    end {
+        $source = if ($Path) { Get-Content -LiteralPath $Path } else { $buffer }
+        $measure = $source | Measure-Object -Line -Word -Character
+        if ($l) { $measure.Lines }
+        elseif ($w) { $measure.Words }
+        elseif ($c) { $measure.Characters }
+        else { '{0,8} {1,8} {2,8} {3}' -f $measure.Lines, $measure.Words, $measure.Characters, $Path }
+    }
+}
+
+function du {
+    param([string]$Path = '.', [switch]$s)
+
+    if ($s) {
+        $bytes = (Get-ChildItem -LiteralPath $Path -Recurse -File -ErrorAction SilentlyContinue |
+            Measure-Object -Property Length -Sum).Sum
+        [PSCustomObject]@{ Size = Format-Bytes $bytes; Path = (Resolve-Path -LiteralPath $Path).Path }
+        return
+    }
+
+    Get-ChildItem -LiteralPath $Path -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+        $bytes = (Get-ChildItem -LiteralPath $_.FullName -Recurse -File -ErrorAction SilentlyContinue |
+            Measure-Object -Property Length -Sum).Sum
+        [PSCustomObject]@{ Size = Format-Bytes $bytes; Name = $_.Name }
+    }
+}
+
+function free {
+    $os = Get-CimInstance -ClassName Win32_OperatingSystem
+    [PSCustomObject]@{
+        Total = Format-Bytes ($os.TotalVisibleMemorySize * 1KB)
+        Used  = Format-Bytes (($os.TotalVisibleMemorySize - $os.FreePhysicalMemory) * 1KB)
+        Free  = Format-Bytes ($os.FreePhysicalMemory * 1KB)
+    }
+}
+
+function watch {
+    param(
+        [Parameter(Mandatory, Position = 0, ValueFromRemainingArguments)][string[]]$Command,
+        [Alias('n')][double]$Interval = 2
+    )
+
+    $script = $Command -join ' '
+    while ($true) {
+        Clear-Host
+        Write-Host ('Every {0}s: {1}    {2}' -f $Interval, $script, (Get-Date)) -ForegroundColor Cyan
+        Invoke-Expression -Command $script
+        Start-Sleep -Seconds $Interval
+    }
+}
+
+function nl {
+    param([Parameter(Mandatory)][string]$Path)
+    $number = 0
+    Get-Content -LiteralPath $Path | ForEach-Object {
+        $number++
+        '{0,6}  {1}' -f $number, $_
+    }
+}
+
+function mktemp {
+    param([switch]$d)
+
+    if ($d) {
+        $dir = Join-Path ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRandomFileName())
+        (New-Item -ItemType Directory -Path $dir).FullName
+    } else {
+        [System.IO.Path]::GetTempFileName()
+    }
+}
+
+function uniq {
+    [CmdletBinding()]
+    param(
+        [switch]$c,
+        [Parameter(ValueFromPipeline)][string]$InputObject
+    )
+
+    begin {
+        $previous = $null
+        $havePrevious = $false
+        $count = 0
+    }
+    process {
+        if ($havePrevious -and $InputObject -eq $previous) {
+            $count++
+        } else {
+            if ($havePrevious) {
+                if ($c) { '{0,7} {1}' -f $count, $previous } else { $previous }
+            }
+            $previous = $InputObject
+            $havePrevious = $true
+            $count = 1
+        }
+    }
+    end {
+        if ($havePrevious) {
+            if ($c) { '{0,7} {1}' -f $count, $previous } else { $previous }
+        }
+    }
+}
+
+function basename {
+    param([Parameter(Mandatory)][string]$Path, [string]$Suffix)
+
+    $leaf = Split-Path -Path $Path -Leaf
+    if ($Suffix -and $leaf.EndsWith($Suffix) -and $leaf -ne $Suffix) {
+        $leaf.Substring(0, $leaf.Length - $Suffix.Length)
+    } else {
+        $leaf
+    }
+}
+
+function dirname {
+    param([Parameter(Mandatory)][string]$Path)
+    $parent = Split-Path -Path $Path -Parent
+    if ([string]::IsNullOrEmpty($parent)) { '.' } else { $parent }
+}
+
+function realpath {
+    param([Parameter(Mandatory)][string]$Path)
+    (Resolve-Path -LiteralPath $Path).ProviderPath
+}
+
+function ln {
+    param(
+        [Parameter(Mandatory, Position = 0)][string]$Target,
+        [Parameter(Mandatory, Position = 1)][string]$Link,
+        [switch]$s
+    )
+    $type = if ($s) { 'SymbolicLink' } else { 'HardLink' }
+    New-Item -ItemType $type -Path $Link -Target $Target
+}
+
+function dig {
+    param([Parameter(Mandatory)][string]$Name, [string]$Type = 'A')
+    Resolve-DnsName -Name $Name -Type $Type
+}
+
+function ifconfig { Get-NetIPConfiguration }
+
+function sha256sum {
+    param([Parameter(Mandatory, ValueFromRemainingArguments)][string[]]$Path)
+    $Path | ForEach-Object { Get-FileHash -Algorithm SHA256 -LiteralPath $_ | Select-Object Hash, Path }
+}
+
+function md5sum {
+    param([Parameter(Mandatory, ValueFromRemainingArguments)][string[]]$Path)
+    $Path | ForEach-Object { Get-FileHash -Algorithm MD5 -LiteralPath $_ | Select-Object Hash, Path }
+}
+
+# GitHub CLI
+function ghpr { gh pr create @args }
+function ghprs { gh pr status @args }
+function ghprv { gh pr view --web @args }
+function ghco { gh pr checkout @args }
+function ghrv { gh repo view --web @args }
+function ghrun { gh run watch @args }
+function ghis { gh issue list @args }
+
 function Set-PSReadLineOptionsCompat {
     [CmdletBinding(SupportsShouldProcess)]
     param([Parameter(Mandatory)][hashtable]$Options)
@@ -753,28 +1004,65 @@ Git:
   gs                git status
   lazyg <message>   git add .; git commit -m <message>; git push
 
+GitHub CLI:
+  ghco <pr>        gh pr checkout <pr>
+  ghis             gh issue list
+  ghpr [args]      gh pr create
+  ghprs            gh pr status
+  ghprv            gh pr view --web
+  ghrun            gh run watch
+  ghrv             gh repo view --web
+
 Shortcuts:
+  .. / ... / ....  Go up one/two/three directories.
+  cd -             Toggle to the previous directory (bash-style).
+  admin/su [cmd]   Start an elevated shell (optionally running a command).
+  basename <p>     Print the file name portion of a path.
   cpy <text>        Copy text to the clipboard.
   df                Show volume information.
+  dig <host>       Resolve DNS records for a host.
+  dirname <p>      Print the directory portion of a path.
   docs/dtop         Go to Documents/Desktop.
+  du [-s] [path]   Show directory sizes (-s for a single total).
+  edit <file>      Open a file in the resolved editor.
+  env              List environment variables.
+  export <n> <v>   Set an environment variable.
   ff <name>         Find files recursively by name.
   flushdns          Clear the DNS cache.
+  free             Show physical memory usage.
   grep <regex> [p]  Search files or piped input.
   head/tail         Show the first or last lines of a file.
+  hist [regex]     Search command history.
+  ifconfig         Show network configuration.
   k9/pkill <name>   Kill processes by name.
+  killport <port>  Stop whatever process is listening on a port.
   la/ll             List visible/all files.
-  mkcd <dir>        Create and enter a directory.
+  ln [-s] t l      Create a hard (or symbolic) link.
+  md5sum <file>    Print the MD5 hash of files.
+  mkcd/take <dir>   Create and enter a directory.
+  mktemp [-d]      Create a temp file (or directory) and print its path.
   nf/touch <file>   Create a file.
+  nl <file>        Print a file with numbered lines.
+  now [-u]         Print the current time (-u for Unix epoch).
+  open/explore [p] Open a path in Explorer / its default app.
+  path             Print PATH entries one per line.
   pgrep <name>      Find processes by name.
+  ports            List listening TCP ports and their owners.
   pst               Paste clipboard text.
+  pubip            Show the public IP address.
+  realpath <p>     Resolve a path to its full form.
+  reload           Reload this profile in the current session.
   sed <f> <a> <b>   Replace text in a file.
+  sha256sum <f>    Print the SHA-256 hash of files.
   sysinfo           Show system information.
+  trash <path>     Move an item to the Recycle Bin.
+  uniq [-c]        Collapse adjacent duplicate lines (-c to count).
   unzip <file>      Extract a zip file here.
   uptime            Show system uptime.
+  watch [-n s] cmd Re-run a command every s seconds.
+  wc [-l|-w|-c] f  Count lines, words, and characters.
+  weather [city]   Show a short weather report.
   which <name>      Show command path.
-  windev            Compile and run the local WinUtil checkout.
-  winutil           Run the latest WinUtil release script.
-  winutildev        Run the latest WinUtil prerelease script.
 '@ | Write-Host
 }
 

@@ -26,9 +26,13 @@ After installing, restart Windows Terminal and set your PowerShell font to `Cask
 - PSReadLine colors, list-view suggestions, and shell-friendly keybinds.
 - Optional `Terminal-Icons`, `oh-my-posh`, and `zoxide` startup.
 - Git shortcuts: `gs`, `ga`, `gcom`, `gp`, `gpull`, `gcl`, `lazyg`.
-- File helpers: `touch`, `mkcd`, `trash`, `ff`, `head`, `sed`, `which`.
-- Process/system helpers: `pgrep`, `pkill`, `k9`, `uptime`, `windev`, `winutil`, `winutildev`.
-- Navigation/listing helpers: `g`, `docs`, `la`, `ll`.
+- GitHub CLI shortcuts: `ghpr`, `ghprs`, `ghprv`, `ghco`, `ghrv`, `ghrun`, `ghis`.
+- File helpers: `touch`, `mkcd`/`take`, `trash`, `ff`, `head`, `tail`, `sed`, `nl`, `wc`, `uniq`, `which`, `mktemp`.
+- Path helpers: `basename`, `dirname`, `realpath`, `ln`, `path`.
+- Process/system helpers: `pgrep`, `pkill`, `k9`, `uptime`, `ports`, `killport`, `free`, `du`, `env`, `now`.
+- Network helpers: `pubip`, `dig`, `ifconfig`, `weather`, `flushdns`.
+- Navigation/listing helpers: `g`, `docs`, `dtop`, `..`/`...`/`....`, `cd -` (bash-style toggle), `la`, `ll`, `open`.
+- Misc: `watch`, `hist`, `reload`, `edit`, `sha256sum`/`md5sum`.
 
 Run `Show-Help` in PowerShell to see the full command list.
 
@@ -75,7 +79,6 @@ Update-Profile_Override
 Update-PowerShell_Override
 Clear-Cache_Override
 Get-Theme_Override
-WinUtilDev_Override
 Set-PredictionSource_Override
 ```
 
