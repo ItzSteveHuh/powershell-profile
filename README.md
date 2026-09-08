@@ -7,7 +7,7 @@ A clean PowerShell 7 profile for Windows Terminal with better colors, keybinds, 
 Run PowerShell as Administrator inside Windows Terminal:
 
 ```powershell
-irm "https://github.com/ChrisTitusTech/powershell-profile/raw/main/setup.ps1" | iex
+irm "https://github.com/ItzSteveHuh/powershell-profile/raw/main/setup.ps1" | iex
 ```
 
 The installer:
