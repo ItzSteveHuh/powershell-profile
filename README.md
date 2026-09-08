@@ -6,7 +6,10 @@ A clean PowerShell 7 profile for Windows Terminal with better colors, keybinds, 
 
 - **PowerShell 7** must be installed and set as the default shell. Windows 11 still ships
   Windows PowerShell 5.1 as the built-in shell; PowerShell 7 is a separate install.
-  - Install: `winget install --id Microsoft.PowerShell --source winget`
+  - Install:
+    ```powershell
+    winget install --id Microsoft.PowerShell --source winget
+    ```
   - Make it the default in Windows Terminal: open Settings (`Ctrl+,`), set **Default profile**
     to **PowerShell** (the 7.x entry, not "Windows PowerShell").
   - Verify: `$PSVersionTable.PSVersion` should report `7.x`.
