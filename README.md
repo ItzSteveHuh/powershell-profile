@@ -2,9 +2,19 @@
 
 A clean PowerShell 7 profile for Windows Terminal with better colors, keybinds, Git shortcuts, file helpers, Terminal-Icons, oh-my-posh, and zoxide.
 
+## Requirements
+
+- **PowerShell 7** must be installed and set as the default shell. Windows 11 still ships
+  Windows PowerShell 5.1 as the built-in shell; PowerShell 7 is a separate install.
+  - Install: `winget install --id Microsoft.PowerShell --source winget`
+  - Make it the default in Windows Terminal: open Settings (`Ctrl+,`), set **Default profile**
+    to **PowerShell** (the 7.x entry, not "Windows PowerShell").
+  - Verify: `$PSVersionTable.PSVersion` should report `7.x`.
+- Windows Terminal.
+
 ## Install
 
-Run PowerShell as Administrator inside Windows Terminal:
+Run PowerShell 7 as Administrator inside Windows Terminal:
 
 ```powershell
 irm "https://github.com/ItzSteveHuh/powershell-profile/raw/main/setup.ps1" | iex
@@ -31,7 +41,7 @@ After installing, restart Windows Terminal and set your PowerShell font to `Cask
 - Path helpers: `basename`, `dirname`, `realpath`, `ln`, `path`.
 - Process/system helpers: `pgrep`, `pkill`, `k9`, `uptime`, `ports`, `killport`, `free`, `du`, `env`, `now`.
 - Network helpers: `pubip`, `dig`, `ifconfig`, `weather`, `flushdns`.
-- Navigation/listing helpers: `g`, `docs`, `dtop`, `..`/`...`/`....`, `cd -` (bash-style toggle), `la`, `ll`, `open`.
+- Navigation/listing helpers: `g`, `docs`, `dtop`, `..`/`...`/`....`, `la`, `ll`, `open`.
 - Misc: `watch`, `hist`, `reload`, `edit`, `sha256sum`/`md5sum`.
 
 Run `Show-Help` in PowerShell to see the full command list.

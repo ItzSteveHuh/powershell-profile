@@ -556,30 +556,6 @@ function .. { Set-Location -Path '..' }
 function ... { Set-Location -Path '../..' }
 function .... { Set-Location -Path '../../..' }
 
-# bash-style cd: `cd -` toggles to the previous directory, `cd` with no args goes home.
-# (PowerShell's native `cd -` walks location history instead of toggling.)
-$global:OLDPWD = $null
-
-function Set-LocationBash {
-    [CmdletBinding()]
-    param([Parameter(Position = 0)][string]$Path)
-
-    $target = if ($Path) { $Path } else { $HOME }
-    $current = $PWD.Path
-
-    if ($target -eq '-') {
-        if (-not $global:OLDPWD) {
-            Write-Warning 'cd: OLDPWD not set'
-            return
-        }
-        $target = $global:OLDPWD
-    }
-
-    Set-Location -Path $target -ErrorAction Stop
-    $global:OLDPWD = $current
-}
-Set-Alias -Name cd -Value Set-LocationBash -Option AllScope -Force
-
 function explore {
     param([string]$Path = '.')
     Invoke-Item -LiteralPath $Path
@@ -1015,7 +991,6 @@ GitHub CLI:
 
 Shortcuts:
   .. / ... / ....  Go up one/two/three directories.
-  cd -             Toggle to the previous directory (bash-style).
   admin/su [cmd]   Start an elevated shell (optionally running a command).
   basename <p>     Print the file name portion of a path.
   cpy <text>        Copy text to the clipboard.
